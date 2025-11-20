@@ -73,18 +73,14 @@ dependencies = [
   "zxing-cpp~=2.3.0",
 ]
 
-optional-dependencies.mariadb = [
-  "mysqlclient~=2.2.7",
-]
+optional-dependencies.mariadb = [ "mysqlclient~=2.2.7" ]
 optional-dependencies.postgres = [
   "psycopg[c,pool]==3.2.9",
   # Direct dependency for proper resolution of the pre-built wheels
   "psycopg-c==3.2.9",
   "psycopg-pool==3.2.7",
 ]
-optional-dependencies.webserver = [
-  "granian[uvloop]~=2.5.1",
-]
+optional-dependencies.webserver = [ "granian[uvloop]~=2.5.1" ]
 
 [dependency-groups]
 
@@ -142,10 +138,7 @@ typing = [
 [tool.uv]
 required-version = ">=0.5.14"
 package = false
-environments = [
-  "sys_platform == 'darwin'",
-  "sys_platform == 'linux'",
-]
+environments = [ "sys_platform == 'darwin'", "sys_platform == 'linux'" ]
 
 [tool.uv.sources]
 # Markers are chosen to select these almost exclusively when building the Docker image
@@ -161,9 +154,7 @@ zxing-cpp = [
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-src = [
-  "src",
-]
+src = [ "src" ]
 respect-gitignore = true
 # https://docs.astral.sh/ruff/settings/
 fix = true
@@ -196,40 +187,19 @@ lint.extend-select = [
   "UP",   # https://docs.astral.sh/ruff/rules/#pyupgrade-up
   "W",    # https://docs.astral.sh/ruff/rules/#pycodestyle-e-w
 ]
-lint.ignore = [
-  "DJ001",
-  "PLC0415",
-  "RUF012",
-  "SIM105",
-]
+lint.ignore = [ "DJ001", "PLC0415", "RUF012", "SIM105" ]
 # Migrations
-lint.per-file-ignores."*/migrations/*.py" = [
-  "E501",
-  "SIM",
-  "T201",
-]
+lint.per-file-ignores."*/migrations/*.py" = [ "E501", "SIM", "T201" ]
 # Testing
-lint.per-file-ignores."*/tests/*.py" = [
-  "E501",
-  "SIM117",
-]
-lint.per-file-ignores.".github/scripts/*.py" = [
-  "E501",
-  "INP001",
-  "SIM117",
-]
+lint.per-file-ignores."*/tests/*.py" = [ "E501", "SIM117" ]
+lint.per-file-ignores.".github/scripts/*.py" = [ "E501", "INP001", "SIM117" ]
 # Docker specific
 lint.per-file-ignores."docker/rootfs/usr/local/bin/wait-for-redis.py" = [
   "INP001",
   "T201",
 ]
-lint.per-file-ignores."docker/wait-for-redis.py" = [
-  "INP001",
-  "T201",
-]
-lint.per-file-ignores."src/documents/models.py" = [
-  "SIM115",
-]
+lint.per-file-ignores."docker/wait-for-redis.py" = [ "INP001", "T201" ]
+lint.per-file-ignores."src/documents/models.py" = [ "SIM115" ]
 lint.per-file-ignores."src/paperless_tesseract/tests/test_parser.py" = [
   "RUF001",
 ]
@@ -242,9 +212,7 @@ skip = "src-ui/src/locale/*,src-ui/pnpm-lock.yaml,src-ui/e2e/*,src/paperless_mai
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-pythonpath = [
-  "src",
-]
+pythonpath = [ "src" ]
 testpaths = [
   "src/documents/tests/",
   "src/paperless/tests/",
@@ -274,15 +242,8 @@ PAPERLESS_DISABLE_DBHANDLER = "true"
 PAPERLESS_CACHE_BACKEND = "django.core.cache.backends.locmem.LocMemCache"
 
 [tool.coverage.run]
-source = [
-  "src/",
-]
-omit = [
-  "*/tests/*",
-  "manage.py",
-  "paperless/wsgi.py",
-  "paperless/auth.py",
-]
+source = [ "src/" ]
+omit = [ "*/tests/*", "manage.py", "paperless/wsgi.py", "paperless/auth.py" ]
 
 [tool.coverage.report]
 exclude_also = [
@@ -293,10 +254,7 @@ exclude_also = [
 
 [tool.mypy]
 mypy_path = "src"
-plugins = [
-  "mypy_django_plugin.main",
-  "mypy_drf_plugin.main",
-]
+plugins = [ "mypy_django_plugin.main", "mypy_drf_plugin.main" ]
 check_untyped_defs = true
 disallow_any_generics = true
 disallow_incomplete_defs = true
