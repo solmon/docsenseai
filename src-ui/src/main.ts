@@ -148,11 +148,14 @@ import { DirtySavedViewGuard } from './app/guards/dirty-saved-view.guard'
 import { PermissionsGuard } from './app/guards/permissions.guard'
 import { ApiVersionInterceptor } from './app/interceptors/api-version.interceptor'
 import { CsrfInterceptor } from './app/interceptors/csrf.interceptor'
+import { TenantInterceptor } from './app/interceptors/tenant.interceptor'
 import { DocumentTitlePipe } from './app/pipes/document-title.pipe'
 import { FilterPipe } from './app/pipes/filter.pipe'
 import { UsernamePipe } from './app/pipes/username.pipe'
 import { SettingsService } from './app/services/settings.service'
+import { TenantContextService } from './app/services/tenant-context.service'
 import { LocalizedDateParserFormatter } from './app/utils/ngb-date-parser-formatter'
+import { tap } from 'rxjs/operators'
 import { ISODateAdapter } from './app/utils/ngb-iso-date-adapter'
 import { environment } from './environments/environment'
 
@@ -230,9 +233,15 @@ registerLocaleData(localeUk)
 registerLocaleData(localeZh)
 registerLocaleData(localeZhHant)
 
-function initializeApp(settings: SettingsService) {
+function initializeApp(settings: SettingsService, tenantContext: TenantContextService) {
   return () => {
-    return settings.initializeSettings()
+    return settings.initializeSettings().pipe(
+      tap(() => {
+        // Initialize tenant context after settings are loaded
+        // This happens asynchronously and doesn't block app initialization
+        tenantContext.initializeTenantContext().subscribe()
+      })
+    )
   }
 }
 const icons = {
@@ -375,7 +384,7 @@ bootstrapApplication(AppComponent, {
     {
       provide: APP_INITIALIZER,
       useFactory: initializeApp,
-      deps: [SettingsService],
+      deps: [SettingsService, TenantContextService],
       multi: true,
     },
     DatePipe,
@@ -388,6 +397,11 @@ bootstrapApplication(AppComponent, {
     {
       provide: HTTP_INTERCEPTORS,
       useClass: ApiVersionInterceptor,
+      multi: true,
+    },
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: TenantInterceptor,
       multi: true,
     },
     FilterPipe,

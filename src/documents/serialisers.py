@@ -652,25 +652,30 @@ class TagSerializer(MatchingModelSerializer, OwnedObjectSerializer):
 
 class CorrespondentField(serializers.PrimaryKeyRelatedField):
     def get_queryset(self):
+        # Automatically filtered by TenantManager
         return Correspondent.objects.all()
 
 
 class TagsField(serializers.PrimaryKeyRelatedField):
     def get_queryset(self):
+        # Automatically filtered by TenantManager
         return Tag.objects.all()
 
 
 class DocumentTypeField(serializers.PrimaryKeyRelatedField):
     def get_queryset(self):
+        # Automatically filtered by TenantManager
         return DocumentType.objects.all()
 
 
 class StoragePathField(serializers.PrimaryKeyRelatedField):
     def get_queryset(self):
+        # Automatically filtered by TenantManager
         return StoragePath.objects.all()
 
 
 class CustomFieldSerializer(serializers.ModelSerializer):
+    """Serializer for CustomField - tenant is handled automatically via TenantModel.save()."""
     def __init__(self, *args, **kwargs):
         context = kwargs.get("context")
         self.api_version = int(
@@ -710,8 +715,15 @@ class CustomFieldSerializer(serializers.ModelSerializer):
             if self.instance is not None
             else self.Meta.model.objects.all()
         )
+        from paperless.tenants.utils import get_current_tenant
+
+        current_tenant = get_current_tenant()
+        if not current_tenant:
+            raise serializers.ValidationError("Tenant context not set.")
+
         if ("name" in attrs) and objects.filter(
             name=name,
+            tenant=current_tenant,  # Filter by tenant
         ).exists():
             raise serializers.ValidationError(
                 {"error": "Object violates name unique constraint"},
@@ -1068,12 +1080,46 @@ class DocumentSerializer(
         return super().to_internal_value(data)
 
     def validate(self, attrs):
+        from paperless.tenants.utils import get_current_tenant
+
+        # Validate tenant context is set
+        current_tenant = get_current_tenant()
+        if not current_tenant:
+            raise serializers.ValidationError("Tenant context not set.")
+
+        # Validate that foreign key relationships belong to the same tenant
+        if "correspondent" in attrs and attrs["correspondent"]:
+            if attrs["correspondent"].tenant != current_tenant:
+                raise serializers.ValidationError(
+                    {"correspondent": "Correspondent must belong to your tenant."}
+                )
+
+        if "document_type" in attrs and attrs["document_type"]:
+            if attrs["document_type"].tenant != current_tenant:
+                raise serializers.ValidationError(
+                    {"document_type": "Document type must belong to your tenant."}
+                )
+
+        if "storage_path" in attrs and attrs["storage_path"]:
+            if attrs["storage_path"].tenant != current_tenant:
+                raise serializers.ValidationError(
+                    {"storage_path": "Storage path must belong to your tenant."}
+                )
+
+        if "tags" in attrs and attrs["tags"]:
+            for tag in attrs["tags"]:
+                if tag.tenant != current_tenant:
+                    raise serializers.ValidationError(
+                        {"tags": f"Tag '{tag.name}' must belong to your tenant."}
+                    )
+
         if (
             "archive_serial_number" in attrs
             and attrs["archive_serial_number"] is not None
             and len(str(attrs["archive_serial_number"])) > 0
             and Document.deleted_objects.filter(
                 archive_serial_number=attrs["archive_serial_number"],
+                tenant=current_tenant,  # Filter by tenant
             ).exists()
         ):
             raise serializers.ValidationError(

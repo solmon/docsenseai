@@ -318,6 +318,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_extensions",
     "paperless",
+    "paperless.tenants.apps.TenantsConfig",
     "documents.apps.DocumentsConfig",
     "paperless_tesseract.apps.PaperlessTesseractConfig",
     "paperless_text.apps.PaperlessTextConfig",
@@ -348,10 +349,10 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.AcceptHeaderVersioning",
-    "DEFAULT_VERSION": "9",  # match src-ui/src/environments/environment.prod.ts
+    "DEFAULT_VERSION": "10",  # match src-ui/src/environments/environment.prod.ts (version 10 for multi-tenancy)
     # Make sure these are ordered and that the most recent version appears
     # last. See api.md#api-versioning when adding new versions.
-    "ALLOWED_VERSIONS": ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    "ALLOWED_VERSIONS": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
     # DRF Spectacular default schema
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -371,6 +372,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "paperless.middleware.ApiVersionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "paperless.tenants.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",

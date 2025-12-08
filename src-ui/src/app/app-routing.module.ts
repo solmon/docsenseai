@@ -20,10 +20,12 @@ import { StoragePathListComponent } from './components/manage/storage-path-list/
 import { TagListComponent } from './components/manage/tag-list/tag-list.component'
 import { WorkflowsComponent } from './components/manage/workflows/workflows.component'
 import { NotFoundComponent } from './components/not-found/not-found.component'
+import { TenantManagementComponent } from './components/tenant-management/tenant-management.component'
 import { DirtyDocGuard } from './guards/dirty-doc.guard'
 import { DirtyFormGuard } from './guards/dirty-form.guard'
 import { DirtySavedViewGuard } from './guards/dirty-saved-view.guard'
 import { PermissionsGuard } from './guards/permissions.guard'
+import { superAdminGuard } from './guards/super-admin.guard'
 import {
   PermissionAction,
   PermissionType,
@@ -295,6 +297,14 @@ export const routes: Routes = [
             type: PermissionType.SavedView,
           },
           componentName: 'SavedViewsComponent',
+        },
+      },
+      {
+        path: 'tenants',
+        component: TenantManagementComponent,
+        canActivate: [superAdminGuard],
+        data: {
+          componentName: 'TenantManagementComponent',
         },
       },
     ],

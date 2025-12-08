@@ -26,6 +26,7 @@ from django_softdelete.models import SoftDeleteModel
 
 from documents.data_models import DocumentSource
 from documents.parsers import get_default_file_extension
+from paperless.tenants.models import TenantModel
 
 
 class ModelWithOwner(models.Model):
@@ -76,29 +77,31 @@ class MatchingModel(ModelWithOwner):
     class Meta:
         abstract = True
         ordering = ("name",)
-        constraints = [
-            models.UniqueConstraint(
-                fields=["name", "owner"],
-                name="%(app_label)s_%(class)s_unique_name_owner",
-            ),
-            models.UniqueConstraint(
-                name="%(app_label)s_%(class)s_name_uniq",
-                fields=["name"],
-                condition=models.Q(owner__isnull=True),
-            ),
-        ]
+        # Note: Unique constraints are now defined in child classes with tenant
+        # Removed constraints from here - child classes define tenant-aware constraints
 
     def __str__(self):
         return self.name
 
 
-class Correspondent(MatchingModel):
+class Correspondent(TenantModel, MatchingModel):
     class Meta(MatchingModel.Meta):
         verbose_name = _("correspondent")
         verbose_name_plural = _("correspondents")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name", "owner"],
+                name="%(app_label)s_%(class)s_unique_tenant_name_owner",
+            ),
+            models.UniqueConstraint(
+                name="%(app_label)s_%(class)s_tenant_name_uniq",
+                fields=["tenant", "name"],
+                condition=models.Q(owner__isnull=True),
+            ),
+        ]
 
 
-class Tag(MatchingModel, TreeNodeModel):
+class Tag(TenantModel, MatchingModel, TreeNodeModel):
     color = models.CharField(_("color"), max_length=7, default="#a6cee3")
     # Maximum allowed nesting depth for tags (root = 1, max depth = 5)
     MAX_NESTING_DEPTH: Final[int] = 5
@@ -115,6 +118,17 @@ class Tag(MatchingModel, TreeNodeModel):
     class Meta(MatchingModel.Meta, TreeNodeModel.Meta):
         verbose_name = _("tag")
         verbose_name_plural = _("tags")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name", "owner"],
+                name="%(app_label)s_%(class)s_unique_tenant_name_owner",
+            ),
+            models.UniqueConstraint(
+                name="%(app_label)s_%(class)s_tenant_name_uniq",
+                fields=["tenant", "name"],
+                condition=models.Q(owner__isnull=True),
+            ),
+        ]
 
     def clean(self):
         # Prevent self-parenting and assigning a descendant as parent
@@ -137,13 +151,24 @@ class Tag(MatchingModel, TreeNodeModel):
         return super().clean()
 
 
-class DocumentType(MatchingModel):
+class DocumentType(TenantModel, MatchingModel):
     class Meta(MatchingModel.Meta):
         verbose_name = _("document type")
         verbose_name_plural = _("document types")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name", "owner"],
+                name="%(app_label)s_%(class)s_unique_tenant_name_owner",
+            ),
+            models.UniqueConstraint(
+                name="%(app_label)s_%(class)s_tenant_name_uniq",
+                fields=["tenant", "name"],
+                condition=models.Q(owner__isnull=True),
+            ),
+        ]
 
 
-class StoragePath(MatchingModel):
+class StoragePath(TenantModel, MatchingModel):
     path = models.TextField(
         _("path"),
     )
@@ -151,9 +176,20 @@ class StoragePath(MatchingModel):
     class Meta(MatchingModel.Meta):
         verbose_name = _("storage path")
         verbose_name_plural = _("storage paths")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name", "owner"],
+                name="%(app_label)s_%(class)s_unique_tenant_name_owner",
+            ),
+            models.UniqueConstraint(
+                name="%(app_label)s_%(class)s_tenant_name_uniq",
+                fields=["tenant", "name"],
+                condition=models.Q(owner__isnull=True),
+            ),
+        ]
 
 
-class Document(SoftDeleteModel, ModelWithOwner):
+class Document(TenantModel, SoftDeleteModel, ModelWithOwner):
     STORAGE_TYPE_UNENCRYPTED = "unencrypted"
     STORAGE_TYPE_GPG = "gpg"
     STORAGE_TYPES = (
@@ -212,7 +248,6 @@ class Document(SoftDeleteModel, ModelWithOwner):
         _("checksum"),
         max_length=32,
         editable=False,
-        unique=True,
         help_text=_("The checksum of the original document."),
     )
 
@@ -317,6 +352,12 @@ class Document(SoftDeleteModel, ModelWithOwner):
         ordering = ("-created",)
         verbose_name = _("document")
         verbose_name_plural = _("documents")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "checksum"],
+                name="%(app_label)s_%(class)s_unique_tenant_checksum",
+            ),
+        ]
 
     def __str__(self) -> str:
         created = self.created.isoformat()
@@ -677,7 +718,7 @@ class PaperlessTask(ModelWithOwner):
         return f"Task {self.task_id}"
 
 
-class Note(SoftDeleteModel):
+class Note(TenantModel, SoftDeleteModel):
     note = models.TextField(
         _("content"),
         blank=True,
@@ -716,8 +757,14 @@ class Note(SoftDeleteModel):
     def __str__(self):
         return self.note
 
+    def save(self, *args, **kwargs):
+        """Auto-assign tenant from document if not set."""
+        if not self.tenant_id and self.document:
+            self.tenant = self.document.tenant
+        super().save(*args, **kwargs)
 
-class ShareLink(SoftDeleteModel):
+
+class ShareLink(TenantModel, SoftDeleteModel):
     class FileVersion(models.TextChoices):
         ARCHIVE = ("archive", _("Archive"))
         ORIGINAL = ("original", _("Original"))
@@ -776,8 +823,14 @@ class ShareLink(SoftDeleteModel):
     def __str__(self):
         return f"Share Link for {self.document.title}"
 
+    def save(self, *args, **kwargs):
+        """Auto-assign tenant from document if not set."""
+        if not self.tenant_id and self.document:
+            self.tenant = self.document.tenant
+        super().save(*args, **kwargs)
 
-class CustomField(models.Model):
+
+class CustomField(TenantModel):
     """
     Defines the name and type of a custom field
     """
@@ -825,8 +878,8 @@ class CustomField(models.Model):
         verbose_name_plural = _("custom fields")
         constraints = [
             models.UniqueConstraint(
-                fields=["name"],
-                name="%(app_label)s_%(class)s_unique_name",
+                fields=["tenant", "name"],
+                name="%(app_label)s_%(class)s_unique_tenant_name",
             ),
         ]
 

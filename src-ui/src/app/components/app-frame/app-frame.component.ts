@@ -42,9 +42,12 @@ import {
 import { SavedViewService } from 'src/app/services/rest/saved-view.service'
 import { SettingsService } from 'src/app/services/settings.service'
 import { TasksService } from 'src/app/services/tasks.service'
+import { TenantContextService } from 'src/app/services/tenant-context.service'
+import { TenantService } from 'src/app/services/tenant.service'
 import { ToastService } from 'src/app/services/toast.service'
 import { environment } from 'src/environments/environment'
 import { ProfileEditDialogComponent } from '../common/profile-edit-dialog/profile-edit-dialog.component'
+import { TenantSelectorComponent } from '../tenant-selector/tenant-selector.component'
 import { DocumentDetailComponent } from '../document-detail/document-detail.component'
 import { ComponentWithPermissions } from '../with-permissions/with-permissions.component'
 import { GlobalSearchComponent } from './global-search/global-search.component'
@@ -84,7 +87,13 @@ export class AppFrameComponent
   private readonly toastService = inject(ToastService)
   private modalService = inject(NgbModal)
   permissionsService = inject(PermissionsService)
+  tenantContextService = inject(TenantContextService)
+  private tenantService = inject(TenantService)
   private djangoMessagesService = inject(DjangoMessagesService)
+
+  get currentTenant() {
+    return this.tenantContextService.getCurrentTenant()
+  }
 
   appRemoteVersion: AppRemoteVersion
 
@@ -297,6 +306,39 @@ export class AppFrameComponent
 
   onLogout() {
     this.openDocumentsService.closeAll()
+  }
+
+  openTenantSelector() {
+    const currentUser = this.settingsService.currentUser
+    if (!currentUser?.id) {
+      this.toastService.showError($localize`User information not available`)
+      return
+    }
+
+    this.tenantService.getUserTenants(currentUser.id).subscribe({
+      next: (tenants) => {
+        if (tenants.length === 0) {
+          this.toastService.showInfo($localize`No tenants available`)
+          return
+        }
+
+        const modal = this.modalService.open(TenantSelectorComponent, {
+          backdrop: 'static',
+        })
+        modal.componentInstance.tenants = tenants
+        modal.componentInstance.title = $localize`Switch Tenant`
+        modal.componentInstance.message = $localize`Select a tenant to switch to.`
+        modal.componentInstance.tenantSelected.subscribe((tenant) => {
+          // Reload page to ensure all data is refreshed with new tenant context
+          window.location.reload()
+        })
+      },
+      error: (err) => {
+        this.toastService.showError($localize`Failed to load tenants`)
+        console.error('Failed to load tenants:', err)
+      },
+    })
+    this.closeMenu()
   }
 
   get showSidebarCounts(): boolean {

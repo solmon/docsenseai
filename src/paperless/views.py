@@ -40,6 +40,8 @@ from paperless.filters import UserFilterSet
 from paperless.models import ApplicationConfiguration
 from paperless.serialisers import ApplicationConfigurationSerializer
 from paperless.serialisers import GroupSerializer
+from paperless.tenants.models import Tenant
+from paperless.tenants.serializers import TenantSerializer
 from paperless.serialisers import PaperlessAuthTokenSerializer
 from paperless.serialisers import ProfileSerializer
 from paperless.serialisers import UserSerializer
@@ -140,6 +142,30 @@ class UserViewSet(ModelViewSet):
         return super().update(request, *args, **kwargs)
 
     @extend_schema(
+        description="Get user's associated tenants",
+        summary="Get user tenants",
+        responses={
+            200: TenantSerializer(many=True),
+        },
+    )
+    @action(detail=True, methods=["get"], url_path="tenants")
+    def tenants(self, request, pk=None):
+        """Get tenants associated with a user."""
+        user = self.get_object()
+
+        # Check permissions: user can view own tenants, superuser can view any user's tenants
+        if not request.user.is_superuser and request.user != user:
+            return HttpResponseForbidden(
+                "You do not have permission to view this user's tenants.",
+            )
+
+        tenant = getattr(user, "tenant", None)
+        tenants = [tenant] if tenant else []
+
+        serializer = TenantSerializer(tenants, many=True)
+        return Response(serializer.data)
+
+    @extend_schema(
         request=None,
         responses={
             200: OpenApiTypes.BOOL,
@@ -207,6 +233,29 @@ class ProfileView(GenericAPIView):
         user.save()
 
         return Response(serializer.to_representation(user))
+
+
+class ProfileTenantView(GenericAPIView):
+    """
+    Get current user's tenant information.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = TenantSerializer
+
+    def get(self, request, *args, **kwargs):
+        """Return the current user's tenant."""
+        user = self.request.user
+        tenant = getattr(user, "tenant", None)
+
+        if not tenant:
+            return Response(
+                {"detail": "No tenant association found. Please contact your administrator."},
+                status=404,
+            )
+
+        serializer = self.get_serializer(tenant)
+        return Response(serializer.data)
 
 
 @extend_schema_view(

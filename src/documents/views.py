@@ -1711,9 +1711,15 @@ class PostDocumentView(GenericAPIView):
             custom_fields=custom_fields,
         )
 
+        # Get tenant_id from current user
+        tenant_id = None
+        if hasattr(request.user, "tenant") and request.user.tenant:
+            tenant_id = request.user.tenant.id
+
         async_task = consume_file.delay(
             input_doc,
             input_doc_overrides,
+            tenant_id=tenant_id,
         )
 
         return Response(async_task.id)

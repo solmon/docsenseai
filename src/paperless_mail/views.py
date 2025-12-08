@@ -129,7 +129,12 @@ class MailAccountViewSet(ModelViewSet, PassUserMixin):
     @action(methods=["post"], detail=True)
     def process(self, request, pk=None):
         account = self.get_object()
-        process_mail_accounts.delay([account.pk])
+        # Get tenant_id from current user
+        tenant_id = None
+        if hasattr(request.user, "tenant") and request.user.tenant:
+            tenant_id = request.user.tenant.id
+
+        process_mail_accounts.delay([account.pk], tenant_id=tenant_id)
 
         return Response({"result": "OK"})
 

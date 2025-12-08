@@ -3,12 +3,19 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 import documents.models as document_models
+from paperless.tenants.models import TenantModel
 
 
-class MailAccount(document_models.ModelWithOwner):
+class MailAccount(TenantModel, document_models.ModelWithOwner):
     class Meta:
         verbose_name = _("mail account")
         verbose_name_plural = _("mail accounts")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "name"],
+                name="%(app_label)s_%(class)s_unique_tenant_name",
+            ),
+        ]
 
     class ImapSecurity(models.IntegerChoices):
         NONE = 1, _("No encryption")
@@ -20,7 +27,7 @@ class MailAccount(document_models.ModelWithOwner):
         GMAIL_OAUTH = 2, _("Gmail OAuth")
         OUTLOOK_OAUTH = 3, _("Outlook OAuth")
 
-    name = models.CharField(_("name"), max_length=256, unique=True)
+    name = models.CharField(_("name"), max_length=256)
 
     imap_server = models.CharField(_("IMAP server"), max_length=256)
 
@@ -84,18 +91,18 @@ class MailAccount(document_models.ModelWithOwner):
         return self.name
 
 
-class MailRule(document_models.ModelWithOwner):
+class MailRule(TenantModel, document_models.ModelWithOwner):
     class Meta:
         verbose_name = _("mail rule")
         verbose_name_plural = _("mail rules")
         constraints = [
             models.UniqueConstraint(
-                fields=["name", "owner"],
-                name="%(app_label)s_%(class)s_unique_name_owner",
+                fields=["tenant", "name", "owner"],
+                name="%(app_label)s_%(class)s_unique_tenant_name_owner",
             ),
             models.UniqueConstraint(
-                name="%(app_label)s_%(class)s_name_unique",
-                fields=["name"],
+                name="%(app_label)s_%(class)s_tenant_name_unique",
+                fields=["tenant", "name"],
                 condition=models.Q(owner__isnull=True),
             ),
         ]

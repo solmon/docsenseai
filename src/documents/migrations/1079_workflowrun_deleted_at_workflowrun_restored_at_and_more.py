@@ -7,6 +7,7 @@ from django.db import models
 class Migration(migrations.Migration):
     dependencies = [
         ("documents", "1073_migrate_workflow_title_jinja"),
+        # This migration is independent of tenant migrations and can run in parallel
     ]
 
     operations = [

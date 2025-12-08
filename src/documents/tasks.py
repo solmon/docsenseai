@@ -54,6 +54,8 @@ from documents.sanity_checker import SanityCheckFailedException
 from documents.signals import document_updated
 from documents.signals.handlers import cleanup_document_deletion
 from documents.signals.handlers import run_workflows
+from paperless.tenants.models import Tenant
+from paperless.tenants.utils import set_current_tenant
 
 if settings.AUDIT_LOG_ENABLED:
     from auditlog.models import LogEntry
@@ -78,7 +80,16 @@ def index_reindex(*, progress_bar_disable=False):
 
 
 @shared_task
-def train_classifier(*, scheduled=True):
+def train_classifier(*, scheduled=True, tenant_id=None):
+    """Train classifier with tenant context."""
+    # Set tenant context if provided
+    if tenant_id:
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            set_current_tenant(tenant)
+        except Tenant.DoesNotExist:
+            logger.warning(f"Tenant {tenant_id} not found, proceeding without tenant context")
+
     task = PaperlessTask.objects.create(
         type=PaperlessTask.TaskType.SCHEDULED_TASK
         if scheduled
@@ -140,7 +151,17 @@ def consume_file(
     self: Task,
     input_doc: ConsumableDocument,
     overrides: DocumentMetadataOverrides | None = None,
+    tenant_id: int | None = None,
 ):
+    """Consume file with tenant context."""
+    # Set tenant context if provided
+    if tenant_id:
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            set_current_tenant(tenant)
+        except Tenant.DoesNotExist:
+            logger.warning(f"Tenant {tenant_id} not found, proceeding without tenant context")
+
     # Default no overrides
     if overrides is None:
         overrides = DocumentMetadataOverrides()
@@ -224,7 +245,16 @@ def sanity_check(*, scheduled=True, raise_on_error=True):
 
 
 @shared_task
-def bulk_update_documents(document_ids):
+def bulk_update_documents(document_ids, tenant_id: int | None = None):
+    """Bulk update documents with tenant context."""
+    # Set tenant context if provided
+    if tenant_id:
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            set_current_tenant(tenant)
+        except Tenant.DoesNotExist:
+            logger.warning(f"Tenant {tenant_id} not found, proceeding without tenant context")
+
     documents = Document.objects.filter(id__in=document_ids)
 
     ix = index.open_index()
@@ -244,11 +274,19 @@ def bulk_update_documents(document_ids):
 
 
 @shared_task
-def update_document_content_maybe_archive_file(document_id):
+def update_document_content_maybe_archive_file(document_id, tenant_id: int | None = None):
     """
     Re-creates OCR content and thumbnail for a document, and archive file if
     it exists.
     """
+    # Set tenant context if provided
+    if tenant_id:
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            set_current_tenant(tenant)
+        except Tenant.DoesNotExist:
+            logger.warning(f"Tenant {tenant_id} not found, proceeding without tenant context")
+
     document = Document.objects.get(id=document_id)
 
     mime_type = document.mime_type
@@ -389,7 +427,7 @@ def empty_trash(doc_ids=None):
 
 
 @shared_task
-def check_scheduled_workflows():
+def check_scheduled_workflows(tenant_id: int | None = None):
     """
     Check and run all enabled scheduled workflows.
 
@@ -400,6 +438,14 @@ def check_scheduled_workflows():
 
     Once a document satisfies this condition, and recurring/non-recurring constraints are met, the workflow is run.
     """
+    # Set tenant context if provided
+    if tenant_id:
+        try:
+            tenant = Tenant.objects.get(id=tenant_id)
+            set_current_tenant(tenant)
+        except Tenant.DoesNotExist:
+            logger.warning(f"Tenant {tenant_id} not found, proceeding without tenant context")
+
     scheduled_workflows: list[Workflow] = (
         Workflow.objects.filter(
             triggers__type=WorkflowTrigger.WorkflowTriggerType.SCHEDULED,

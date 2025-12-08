@@ -32,7 +32,7 @@
   <ul ngbNav class="order-sm-3">
     <pngx-toasts-dropdown></pngx-toasts-dropdown>
     <li ngbDropdown class="nav-item dropdown">
-      <button class="btn ps-1 border-0" id="userDropdown" ngbDropdownToggle>
+        <button class="btn ps-1 border-0" id="userDropdown" ngbDropdownToggle>
         <i-bs width="1.3em" height="1.3em" name="person-circle"></i-bs>
         <span class="small ms-2 d-none d-sm-inline">
           {{this.settingsService.displayName}}
@@ -43,6 +43,16 @@
           <p class="small mb-0 px-3 text-muted" i18n>Logged in as {{this.settingsService.displayName}}</p>
           <div class="dropdown-divider"></div>
         </div>
+        @if (currentTenant) {
+          <div class="px-3 py-2 text-muted small">
+            <i-bs class="me-2" name="building"></i-bs>
+            <span i18n>Tenant:</span> {{currentTenant.name}}
+          </div>
+          <button ngbDropdownItem class="nav-link" (click)="openTenantSelector()">
+            <i-bs class="me-2" name="arrow-repeat"></i-bs><ng-container i18n>Switch Tenant</ng-container>
+          </button>
+          <div class="dropdown-divider"></div>
+        }
         <button ngbDropdownItem class="nav-link" (click)="editProfile()">
           <i-bs class="me-2" name="person"></i-bs><ng-container i18n>My Profile</ng-container>
         </button>
@@ -271,6 +281,15 @@
                 <i-bs class="me-1" name="people"></i-bs><span>&nbsp;<ng-container i18n>Users & Groups</ng-container></span>
               </a>
             </li>
+            @if (permissionsService.isSuperUser()) {
+              <li class="nav-item app-link">
+                <a class="nav-link" routerLink="tenants" routerLinkActive="active" (click)="closeMenu()"
+                  ngbPopover="Tenant Management" i18n-ngbPopover [disablePopover]="!slimSidebarEnabled" placement="end"
+                  container="body" triggers="mouseenter:mouseleave" popoverClass="popover-slim">
+                  <i-bs class="me-1" name="building"></i-bs><span>&nbsp;<ng-container i18n>Tenant Management</ng-container></span>
+                </a>
+              </li>
+            }
             <li class="nav-item app-link"
               *pngxIfPermissions="{ action: PermissionAction.View, type: PermissionType.PaperlessTask }"
               tourAnchor="tour.file-tasks">

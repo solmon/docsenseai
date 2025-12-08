@@ -51,6 +51,7 @@ from paperless.views import GenerateAuthTokenView
 from paperless.views import GroupViewSet
 from paperless.views import PaperlessObtainAuthTokenView
 from paperless.views import ProfileView
+from paperless.views import ProfileTenantView
 from paperless.views import SocialAccountProvidersView
 from paperless.views import TOTPView
 from paperless.views import UserViewSet
@@ -58,6 +59,7 @@ from paperless_mail.views import MailAccountViewSet
 from paperless_mail.views import MailRuleViewSet
 from paperless_mail.views import OauthCallbackView
 from paperless_mail.views import ProcessedMailViewSet
+from paperless.tenants.urls import router as tenants_router
 
 api_router = DefaultRouter()
 api_router.register(r"correspondents", CorrespondentViewSet)
@@ -79,6 +81,8 @@ api_router.register(r"workflows", WorkflowViewSet)
 api_router.register(r"custom_fields", CustomFieldViewSet)
 api_router.register(r"config", ApplicationConfigurationViewSet)
 api_router.register(r"processed_mail", ProcessedMailViewSet)
+# Include tenant URLs
+api_router.registry.extend(tenants_router.registry)
 
 
 urlpatterns = [
@@ -186,6 +190,11 @@ urlpatterns = [
                                 "totp/",
                                 TOTPView.as_view(),
                                 name="totp_view",
+                            ),
+                            path(
+                                "tenant/",
+                                ProfileTenantView.as_view(),
+                                name="profile_tenant",
                             ),
                         ],
                     ),

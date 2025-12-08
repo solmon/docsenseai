@@ -52,6 +52,52 @@ The REST api provides four different forms of authentication.
     [configuration](configuration.md#PAPERLESS_ENABLE_HTTP_REMOTE_USER_API)),
     you can authenticate against the API using Remote User auth.
 
+## Multi-Tenant Support
+
+Paperless-ngx supports multi-tenant deployments where multiple organizations share the same database infrastructure with complete data isolation.
+
+### Tenant Identification
+
+Tenant identification is handled via the `X-Tenant-ID` request header:
+
+```
+X-Tenant-ID: <tenant_id>
+```
+
+**Behavior**:
+- If provided: The header value is verified against the authenticated user's tenant association. If they don't match, the request is rejected with `403 Forbidden`.
+- If missing: The system automatically uses the authenticated user's tenant from their user profile.
+- If invalid: Requests with invalid tenant IDs are rejected with `400 Bad Request`.
+
+**Security**: The `X-Tenant-ID` header is always verified against the authenticated user's tenant association. Users cannot access other tenants' data by manipulating the header value.
+
+**Example**:
+```bash
+curl -H "Authorization: Token YOUR_TOKEN" \
+     -H "X-Tenant-ID: 1" \
+     https://paperless.example.com/api/documents/
+```
+
+### Tenant Management
+
+Tenant management endpoints are available at `/api/tenants/` (admin only):
+
+- `GET /api/tenants/` - List all tenants
+- `POST /api/tenants/` - Create a new tenant
+- `GET /api/tenants/{id}/` - Get tenant details
+- `PATCH /api/tenants/{id}/` - Update tenant
+- `DELETE /api/tenants/{id}/` - Soft delete tenant
+
+### Data Isolation
+
+All tenant-specific data (documents, tags, correspondents, etc.) is automatically filtered by tenant. Queries automatically include tenant filtering, ensuring complete data isolation between tenants.
+
+**Error Responses**:
+- `403 Forbidden`: Tenant ID in header doesn't match user's tenant association
+- `403 Forbidden`: User has no tenant association
+- `403 Forbidden`: Tenant account is inactive
+- `400 Bad Request`: Invalid tenant ID format
+
 ## Searching for documents
 
 Full text searching is available on the `/api/documents/` endpoint. Two

@@ -1,0 +1,29 @@
+.list-group-item {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+
+  &:hover:not(.active):not(:disabled) {
+    background-color: var(--bs-gray-100);
+  }
+
+  &.active {
+    background-color: var(--bs-primary);
+    border-color: var(--bs-primary);
+    color: white;
+
+    h5,
+    small {
+      color: white;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.modal-body {
+  min-height: 200px;
+}
+

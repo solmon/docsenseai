@@ -1,0 +1,74 @@
+<div class="modal-header">
+  <h4 class="modal-title">{{ title }}</h4>
+  <button
+    type="button"
+    class="btn-close"
+    aria-label="Close"
+    (click)="cancel()"
+  ></button>
+</div>
+
+<div class="modal-body">
+  <p *ngIf="message" class="text-muted mb-3">{{ message }}</p>
+
+  <div *ngIf="error" class="alert alert-danger" role="alert">
+    {{ error }}
+  </div>
+
+  <div *ngIf="tenants.length === 0 && !error" class="text-center py-4">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="mt-2 text-muted">{{ loadingTenantsText }}</p>
+  </div>
+
+  <div *ngIf="tenants.length > 0" class="list-group">
+    <button
+      *ngFor="let tenant of tenants"
+      type="button"
+      class="list-group-item list-group-item-action"
+      [class.active]="selectedTenant?.id === tenant.id"
+      (click)="selectTenant(tenant)"
+      [disabled]="!tenant.is_active"
+    >
+      <div class="d-flex w-100 justify-content-between align-items-center">
+        <div>
+          <h5 class="mb-1">{{ tenant.name }}</h5>
+          <small class="text-muted">{{ tenant.identifier }}</small>
+        </div>
+        <span
+          *ngIf="selectedTenant?.id === tenant.id"
+          class="badge bg-primary rounded-pill"
+        >
+          {{ selectedText }}
+        </span>
+        <span
+          *ngIf="!tenant.is_active"
+          class="badge bg-secondary rounded-pill"
+        >
+          {{ inactiveText }}
+        </span>
+      </div>
+    </button>
+  </div>
+</div>
+
+<div class="modal-footer">
+  <button
+    type="button"
+    class="btn btn-outline-secondary"
+    (click)="cancel()"
+    [disabled]="loading"
+  >
+    {{ cancelText }}
+  </button>
+  <button
+    type="button"
+    class="btn btn-primary"
+    (click)="confirm()"
+    [disabled]="!selectedTenant || loading || !selectedTenant.is_active"
+  >
+    {{ selectText }}
+  </button>
+</div>
+
