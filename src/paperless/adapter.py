@@ -124,9 +124,62 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
         """
         Save the user instance. Default groups are assigned to the user, if
         specified in the settings.
+
+        For Azure Entra ID (OIDC) authentication, this method:
+        1. Attempts to link to existing user account by email address
+        2. Creates new account if no match found and auto-signup is enabled
+        3. Preserves existing user permissions when linking accounts
+        4. Logs authentication events for security auditing
         """
-        # save_user also calls account_adapter save_user which would set ACCOUNT_DEFAULT_GROUPS
-        user: User = super().save_user(request, sociallogin, form)
+        provider = sociallogin.account.provider
+        email = (
+            sociallogin.account.extra_data.get("email") or sociallogin.user.email or ""
+        )
+        uid = sociallogin.account.uid  # This is the 'sub' claim from OIDC token
+
+        # For OIDC providers (including Azure Entra ID), attempt account linking
+        if provider == "openid_connect" and email:
+            try:
+                # Try to find existing user by email (case-insensitive)
+                existing_user = User.objects.filter(email__iexact=email).first()
+
+                if existing_user:
+                    # Link social account to existing user
+                    logger.info(
+                        f"Linking Azure Entra ID account (email: {email}, uid: {uid}) "
+                        f"to existing user account: {existing_user.username}",
+                    )
+                    # Update the sociallogin to use existing user before save
+                    sociallogin.user = existing_user
+                    # Call parent to create the SocialAccount link
+                    user: User = super().save_user(request, sociallogin, form)
+                    logger.info(
+                        f"Successfully linked Azure Entra ID account to user: {existing_user.username}",
+                    )
+                else:
+                    # No existing user found, proceed with normal account creation
+                    logger.info(
+                        f"Creating new user account for Azure Entra ID authentication "
+                        f"(email: {email}, uid: {uid})",
+                    )
+                    user: User = super().save_user(request, sociallogin, form)
+                    logger.info(
+                        f"Successfully created new user account: {user.username} "
+                        f"for Azure Entra ID authentication",
+                    )
+            except Exception as e:
+                # Log error but allow fallback to default behavior
+                logger.error(
+                    f"Error during Azure Entra ID account linking/creation: {e}",
+                    exc_info=True,
+                )
+                # Fall back to default account creation
+                user: User = super().save_user(request, sociallogin, form)
+        else:
+            # For non-OIDC providers, use default behavior
+            user: User = super().save_user(request, sociallogin, form)
+
+        # Assign default groups for social accounts
         group_names: list[str] = settings.SOCIAL_ACCOUNT_DEFAULT_GROUPS
         if len(group_names) > 0:
             groups = Group.objects.filter(name__in=group_names)
@@ -135,5 +188,12 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
             )
             user.groups.add(*groups)
             user.save()
+
+        # Log successful authentication event
+        logger.info(
+            f"User authenticated via {provider}: username={user.username}, "
+            f"email={user.email}, user_id={user.id}",
+        )
+
         handle_social_account_updated(None, request, sociallogin)
         return user

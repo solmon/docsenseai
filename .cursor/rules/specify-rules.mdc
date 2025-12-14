@@ -3,6 +3,8 @@
 Auto-generated from all feature plans. Last updated: 2025-12-07
 
 ## Active Technologies
+- Python 3.10+ (supports 3.10-3.14) + Django ~5.2.5, django-allauth ~65.12.1 (with socialaccount and mfa), Django REST Framework ~3.16, drf-spectacular ~0.28 (001-multi-idp-auth)
+- Existing Django database (PostgreSQL/MySQL/MariaDB/SQLite) - no new storage requirements (001-multi-idp-auth)
 
 - Python 3.10-3.14 (minimum 3.10) - existing + Django 5.2+, Django REST Framework 3.16, Celery 5.5.1, Redis 5.2.1, Angular/TypeScript - existing (001-multi-tenancy)
 
@@ -22,6 +24,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.10-3.14 (minimum 3.10) - existing: Follow standard conventions
 
 ## Recent Changes
+- 001-multi-idp-auth: Added Python 3.10+ (supports 3.10-3.14) + Django ~5.2.5, django-allauth ~65.12.1 (with socialaccount and mfa), Django REST Framework ~3.16, drf-spectacular ~0.28
 
 - 001-multi-tenancy: Added Python 3.10-3.14 (minimum 3.10) - existing + Django 5.2+, Django REST Framework 3.16, Celery 5.5.1, Redis 5.2.1, Angular/TypeScript - existing
 

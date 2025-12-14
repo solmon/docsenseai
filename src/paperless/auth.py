@@ -83,3 +83,50 @@ class PaperlessBasicAuthentication(authentication.BasicAuthentication):
             raise exceptions.AuthenticationFailed("MFA required")
 
         return user_tuple
+
+
+def is_azure_entra_id_configured() -> bool:
+    """
+    Check if Azure Entra ID (OIDC) provider is configured.
+
+    Returns True if openid_connect provider is configured with at least one app
+    that could be Azure Entra ID (identified by server_url containing
+    login.microsoftonline.com or microsoft.com).
+    """
+    from allauth.socialaccount.models import SocialApp
+
+    try:
+        oidc_apps = SocialApp.objects.filter(provider="openid_connect")
+        for app in oidc_apps:
+            # Check if settings contain Azure Entra ID server URL
+            settings = app.settings or {}
+            server_url = settings.get("server_url", "")
+            if (
+                "login.microsoftonline.com" in server_url
+                or "microsoft.com" in server_url
+            ):
+                return True
+    except Exception:
+        # If SocialApp model is not available or not migrated, return False
+        pass
+
+    # Also check SOCIALACCOUNT_PROVIDERS setting
+    socialaccount_providers = getattr(settings, "SOCIALACCOUNT_PROVIDERS", {})
+    openid_connect_config = socialaccount_providers.get("openid_connect", {})
+    apps = openid_connect_config.get("APPS", [])
+    for app_config in apps:
+        app_settings = app_config.get("settings", {})
+        server_url = app_settings.get("server_url", "")
+        if "login.microsoftonline.com" in server_url or "microsoft.com" in server_url:
+            return True
+
+    return False
+
+
+def is_database_authentication_enabled() -> bool:
+    """
+    Check if database authentication (username/password) is enabled.
+
+    Returns True if DISABLE_REGULAR_LOGIN is False or not set.
+    """
+    return not getattr(settings, "DISABLE_REGULAR_LOGIN", False)

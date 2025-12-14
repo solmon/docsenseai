@@ -920,6 +920,19 @@ PAPERLESS_SOCIALACCOUNT_PROVIDERS='
 {"openid_connect": {"APPS": [{"provider_id": "keycloak","name": "Keycloak","client_id": "paperless","secret": "<CLIENT_SECRET>","settings": { "server_url": "https://<KEYCLOAK_SERVER>/realms/<REALM>/.well-known/openid-configuration"}}]}}'
 ```
 
+To use Azure Entra ID (Microsoft Entra ID) with OIDC:
+
+```conf
+PAPERLESS_APPS="allauth.socialaccount.providers.openid_connect"
+PAPERLESS_SOCIALACCOUNT_PROVIDERS='{"openid_connect": {"APPS": [{"provider_id": "azure_entra","name": "Azure Entra ID","client_id": "<AZURE_CLIENT_ID>","secret": "<AZURE_CLIENT_SECRET>","settings": {"server_url": "https://login.microsoftonline.com/<TENANT_ID>/.well-known/openid-configuration"}}]}}'
+```
+
+When configuring Azure Entra ID:
+1. Register your application in the [Azure Portal](https://portal.azure.com/) under Microsoft Entra ID > App registrations
+2. Set the redirect URI to: `https://your-paperless-domain.com/accounts/openid_connect/login/callback/`
+3. Replace `<AZURE_CLIENT_ID>`, `<AZURE_CLIENT_SECRET>`, and `<TENANT_ID>` with values from your Azure app registration
+4. Paperless-ngx will automatically link Azure Entra ID accounts to existing local accounts by matching email addresses
+
 More details about configuration option for various providers can be found in the [allauth documentation](https://docs.allauth.org/en/latest/socialaccount/providers/index.html#provider-specifics).
 
 ### Disabling Regular Login
