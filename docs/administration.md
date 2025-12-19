@@ -198,6 +198,58 @@ You may also use the exporter and importer with the `--data-only` flag, after cr
     You should not change any settings, especially paths, when doing this or there is a
     risk of data loss
 
+## Storage Backend Configuration {#storage-backend}
+
+Paperless-ngx supports multiple storage backends for document storage. By default, documents are stored on the local filesystem. You can configure the application to use Azure Blob Storage or other cloud storage providers.
+
+### Filesystem Storage (Default)
+
+Filesystem storage is the default backend and requires no additional configuration. Documents are stored in the configured media directories:
+
+- Originals: `{MEDIA_ROOT}/documents/originals/`
+- Archives: `{MEDIA_ROOT}/documents/archive/`
+- Thumbnails: `{MEDIA_ROOT}/documents/thumbnails/`
+
+### Azure Blob Storage
+
+To use Azure Blob Storage for document storage, configure the following environment variables:
+
+```bash
+# Set storage backend to Azure Blob Storage
+export PAPERLESS_STORAGE_BACKEND=azure_blob
+
+# Azure Storage account connection string
+export PAPERLESS_AZURE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your_account;AccountKey=your_key;EndpointSuffix=core.windows.net"
+
+# Azure Blob Storage container name
+export PAPERLESS_AZURE_CONTAINER_NAME=paperless-documents
+```
+
+**Configuration Details:**
+
+- **PAPERLESS_STORAGE_BACKEND**: Set to `azure_blob` to enable Azure Blob Storage. Defaults to `filesystem` if not specified.
+- **PAPERLESS_AZURE_CONNECTION_STRING**: Required when using Azure backend. Your Azure Storage account connection string. Get this from the Azure Portal under your Storage Account → Access Keys.
+- **PAPERLESS_AZURE_CONTAINER_NAME**: Required when using Azure backend. The name of the Azure Blob Storage container where documents will be stored. The container will be created automatically if it doesn't exist.
+
+**Security Notes:**
+
+- Store connection strings securely (environment variables, secrets management)
+- Connection strings contain sensitive credentials - never commit them to version control
+- Consider using Azure Managed Identity for Azure-hosted deployments (future enhancement)
+
+**Container Organization:**
+
+Documents are organized in the Azure container using the same logical path structure:
+- Originals: `documents/originals/{filename}`
+- Archives: `documents/archive/{filename}`
+- Thumbnails: `documents/thumbnails/{filename}`
+
+**Troubleshooting:**
+
+- **Connection errors**: Verify your connection string is correct and your Azure Storage account is accessible
+- **Container creation failures**: Ensure your connection string has permissions to create containers
+- **File access errors**: Verify your connection string has read/write permissions for the container
+
 ## Management utilities {#management-commands}
 
 Paperless comes with some management commands that perform various

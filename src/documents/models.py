@@ -393,7 +393,12 @@ class Document(TenantModel, SoftDeleteModel, ModelWithOwner):
             return " ".join((self.content[:head_len], self.content[-tail_len:]))
 
     @property
-    def source_path(self) -> Path:
+    def source_path(self) -> str:
+        """
+        Return logical path for source document.
+
+        Returns logical path string that storage backend resolves to actual location.
+        """
         if self.filename:
             fname = str(self.filename)
         else:
@@ -401,26 +406,44 @@ class Document(TenantModel, SoftDeleteModel, ModelWithOwner):
             if self.storage_type == self.STORAGE_TYPE_GPG:
                 fname += ".gpg"  # pragma: no cover
 
-        return (settings.ORIGINALS_DIR / Path(fname)).resolve()
+        # Return logical path (relative path)
+        return f"documents/originals/{fname}"
 
     @property
     def source_file(self):
-        return Path(self.source_path).open("rb")
+        """Return file-like object from storage backend."""
+        from documents.storage.factory import get_storage_backend
+
+        backend = get_storage_backend()
+        return backend.retrieve(self.source_path)
 
     @property
     def has_archive_version(self) -> bool:
         return self.archive_filename is not None
 
     @property
-    def archive_path(self) -> Path | None:
+    def archive_path(self) -> str | None:
+        """
+        Return logical path for archive document.
+
+        Returns logical path string that storage backend resolves to actual location.
+        """
         if self.has_archive_version:
-            return (settings.ARCHIVE_DIR / Path(str(self.archive_filename))).resolve()
+            fname = str(self.archive_filename)
+            return f"documents/archive/{fname}"
         else:
             return None
 
     @property
     def archive_file(self):
-        return Path(self.archive_path).open("rb")
+        """Return file-like object from storage backend."""
+        if not self.has_archive_version:
+            return None
+
+        from documents.storage.factory import get_storage_backend
+
+        backend = get_storage_backend()
+        return backend.retrieve(self.archive_path)
 
     def get_public_filename(self, *, archive=False, counter=0, suffix=None) -> str:
         """
@@ -446,18 +469,25 @@ class Document(TenantModel, SoftDeleteModel, ModelWithOwner):
         return get_default_file_extension(self.mime_type)
 
     @property
-    def thumbnail_path(self) -> Path:
+    def thumbnail_path(self) -> str:
+        """
+        Return logical path for thumbnail.
+
+        Returns logical path string that storage backend resolves to actual location.
+        """
         webp_file_name = f"{self.pk:07}.webp"
         if self.storage_type == self.STORAGE_TYPE_GPG:
             webp_file_name += ".gpg"
 
-        webp_file_path = settings.THUMBNAIL_DIR / Path(webp_file_name)
-
-        return webp_file_path.resolve()
+        return f"documents/thumbnails/{webp_file_name}"
 
     @property
     def thumbnail_file(self):
-        return Path(self.thumbnail_path).open("rb")
+        """Return file-like object from storage backend."""
+        from documents.storage.factory import get_storage_backend
+
+        backend = get_storage_backend()
+        return backend.retrieve(self.thumbnail_path)
 
     @property
     def created_date(self):

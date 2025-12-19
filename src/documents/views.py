@@ -798,28 +798,72 @@ class DocumentViewSet(
         )
 
     def get_metadata(self, file, mime_type):
-        if not Path(file).is_file():
-            return None
+        # file can be a Path (string) or file-like object
+        from documents.storage.factory import get_storage_backend
+
+        backend = get_storage_backend()
+
+        # If file is a logical path string, retrieve from storage backend
+        if isinstance(file, str):
+            try:
+                file_obj = backend.retrieve(file)
+                # Create temporary file for parser (parsers expect file paths)
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                    tmp_file.write(file_obj.read())
+                    tmp_path = tmp_file.name
+            except FileNotFoundError:
+                return None
+        else:
+            # Assume it's a Path object (backward compatibility)
+            if not Path(file).is_file():
+                return None
+            tmp_path = file
 
         parser_class = get_parser_class_for_mime_type(mime_type)
         if parser_class:
             parser = parser_class(progress_callback=None, logging_group=None)
 
             try:
-                return parser.extract_metadata(file, mime_type)
+                result = parser.extract_metadata(tmp_path, mime_type)
+                # Clean up temporary file if we created one
+                if isinstance(file, str) and Path(tmp_path).exists():
+                    Path(tmp_path).unlink()
+                return result
             except Exception:  # pragma: no cover
                 logger.exception(f"Issue getting metadata for {file}")
+                if isinstance(file, str) and Path(tmp_path).exists():
+                    Path(tmp_path).unlink()
                 # TODO: cover GPG errors, remove later.
                 return []
         else:  # pragma: no cover
             logger.warning(f"No parser for {mime_type}")
+            if isinstance(file, str) and Path(tmp_path).exists():
+                Path(tmp_path).unlink()
             return []
 
     def get_filesize(self, filename):
-        if Path(filename).is_file():
-            return Path(filename).stat().st_size
+        from documents.storage.factory import get_storage_backend
+
+        backend = get_storage_backend()
+
+        # If filename is a logical path string, get size from storage backend
+        if isinstance(filename, str):
+            try:
+                file_obj = backend.retrieve(filename)
+                file_obj.seek(0, 2)  # Seek to end
+                size = file_obj.tell()
+                file_obj.seek(0)  # Reset
+                return size
+            except FileNotFoundError:
+                return None
         else:
-            return None
+            # Assume it's a Path object (backward compatibility)
+            if Path(filename).is_file():
+                return Path(filename).stat().st_size
+            else:
+                return None
 
     @action(methods=["get"], detail=True, filter_backends=[])
     @method_decorator(cache_control(no_cache=True))
@@ -1219,14 +1263,25 @@ class DocumentViewSet(
         try:
             attachments: list[EmailAttachment] = []
             for doc in documents:
-                attachment_path = (
-                    doc.archive_path
-                    if use_archive_version and doc.has_archive_version
-                    else doc.source_path
-                )
+                # Get file from storage backend
+                if use_archive_version and doc.has_archive_version:
+                    file_obj = doc.archive_file
+                    logical_path = doc.archive_path
+                else:
+                    file_obj = doc.source_file
+                    logical_path = doc.source_path
+
+                # Create temporary file for email attachment
+                # (EmailAttachment expects a Path object)
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+                    tmp_file.write(file_obj.read())
+                    tmp_path = Path(tmp_file.name)
+
                 attachments.append(
                     EmailAttachment(
-                        path=attachment_path,
+                        path=tmp_path,
                         mime_type=doc.mime_type,
                         friendly_name=doc.get_public_filename(
                             archive=use_archive_version and doc.has_archive_version,

@@ -493,34 +493,34 @@ class ConsumerPlugin(
                 # After everything is in the database, copy the files into
                 # place. If this fails, we'll also rollback the transaction.
                 with FileLock(settings.MEDIA_LOCK):
-                    document.filename = generate_unique_filename(document)
-                    create_source_path_directory(document.source_path)
+                    from documents.storage.factory import get_storage_backend
 
-                    self._write(
-                        document.storage_type,
+                    backend = get_storage_backend()
+
+                    document.filename = generate_unique_filename(document)
+                    # Note: Directory creation is handled by backend.store() method
+
+                    # Store original document
+                    source_file = (
                         self.unmodified_original
                         if self.unmodified_original is not None
-                        else self.working_copy,
-                        document.source_path,
+                        else self.working_copy
                     )
+                    with Path(source_file).open("rb") as f:
+                        backend.store(document.source_path, f)
 
-                    self._write(
-                        document.storage_type,
-                        thumbnail,
-                        document.thumbnail_path,
-                    )
+                    # Store thumbnail
+                    with Path(thumbnail).open("rb") as f:
+                        backend.store(document.thumbnail_path, f)
 
                     if archive_path and Path(archive_path).is_file():
                         document.archive_filename = generate_unique_filename(
                             document,
                             archive_filename=True,
                         )
-                        create_source_path_directory(document.archive_path)
-                        self._write(
-                            document.storage_type,
-                            archive_path,
-                            document.archive_path,
-                        )
+                        # Store archive
+                        with Path(archive_path).open("rb") as f:
+                            backend.store(document.archive_path, f)
 
                         with Path(archive_path).open("rb") as f:
                             document.archive_checksum = hashlib.md5(

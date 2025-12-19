@@ -1,5 +1,6 @@
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
 
 from django.conf import settings
 from django.core.cache import cache
@@ -12,6 +13,7 @@ from documents.caching import CLASSIFIER_VERSION_KEY
 from documents.caching import get_thumbnail_modified_key
 from documents.classifier import DocumentClassifier
 from documents.models import Document
+from documents.storage.factory import get_storage_backend
 
 
 def suggestions_etag(request, pk: int) -> str | None:
@@ -128,8 +130,11 @@ def thumbnail_last_modified(request, pk: int) -> datetime | None:
     Cache should be (slightly?) faster than filesystem
     """
     try:
-        doc = Document.objects.only("storage_type").get(pk=pk)
-        if not doc.thumbnail_path.exists():
+        doc = Document.objects.only("storage_type", "modified").get(pk=pk)
+        backend = get_storage_backend()
+        thumbnail_path = doc.thumbnail_path
+
+        if not backend.exists(thumbnail_path):
             return None
         doc_key = get_thumbnail_modified_key(pk)
 
@@ -139,11 +144,23 @@ def thumbnail_last_modified(request, pk: int) -> datetime | None:
             return cache_hit
 
         # No cache, get the timestamp and cache the datetime
-        last_modified = datetime.fromtimestamp(
-            doc.thumbnail_path.stat().st_mtime,
-            tz=timezone.utc,
-        )
-        cache.set(doc_key, last_modified, CACHE_50_MINUTES)
-        return last_modified
+        # Use the storage backend's get_path to resolve the actual file path
+        try:
+            resolved_path = backend.get_path(thumbnail_path)
+            resolved_path_obj = Path(resolved_path)
+            # Only stat if it's an absolute path (filesystem backend)
+            if resolved_path_obj.is_absolute():
+                last_modified = datetime.fromtimestamp(
+                    resolved_path_obj.stat().st_mtime,
+                    tz=timezone.utc,
+                )
+            else:
+                # For cloud backends, use the document's modified time
+                last_modified = doc.modified
+            cache.set(doc_key, last_modified, CACHE_50_MINUTES)
+            return last_modified
+        except (FileNotFoundError, OSError):
+            # File doesn't exist or can't be accessed
+            return None
     except Document.DoesNotExist:  # pragma: no cover
         return None

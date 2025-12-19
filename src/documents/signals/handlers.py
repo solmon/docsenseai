@@ -326,66 +326,93 @@ def set_storage_path(
 
 # see empty_trash in documents/tasks.py for signal handling
 def cleanup_document_deletion(sender, instance, **kwargs):
+    from documents.storage.factory import get_storage_backend
+
+    backend = get_storage_backend()
+
     with FileLock(settings.MEDIA_LOCK):
-        if settings.EMPTY_TRASH_DIR:
-            # Find a non-conflicting filename in case a document with the same
-            # name was moved to trash earlier
-            counter = 0
-            old_filename = Path(instance.source_path).name
-            old_filebase = Path(old_filename).stem
-            old_fileext = Path(old_filename).suffix
-
-            while True:
-                new_file_path = settings.EMPTY_TRASH_DIR / (
-                    old_filebase + (f"_{counter:02}" if counter else "") + old_fileext
-                )
-
-                if new_file_path.exists():
-                    counter += 1
-                else:
-                    break
-
-            logger.debug(f"Moving {instance.source_path} to trash at {new_file_path}")
+        # Handle trash directory (only for filesystem backend)
+        if settings.EMPTY_TRASH_DIR and isinstance(instance.source_path, str):
+            # For filesystem backend, we can move to trash
+            # For other backends, skip trash (files are in cloud storage)
             try:
-                shutil.move(instance.source_path, new_file_path)
-            except OSError as e:
-                logger.error(
-                    f"Failed to move {instance.source_path} to trash at "
-                    f"{new_file_path}: {e}. Skipping cleanup!",
-                )
-                return
+                # Get actual filesystem path for filesystem backend
+                fs_path = backend.get_path(instance.source_path)
+                if isinstance(fs_path, str) and Path(fs_path).exists():
+                    # Find a non-conflicting filename in case a document with the same
+                    # name was moved to trash earlier
+                    counter = 0
+                    old_filename = Path(fs_path).name
+                    old_filebase = Path(old_filename).stem
+                    old_fileext = Path(old_filename).suffix
 
-        files = (
-            instance.archive_path,
-            instance.thumbnail_path,
-        )
-        if not settings.EMPTY_TRASH_DIR:
-            # Only delete the original file if we are not moving it to trash dir
-            files += (instance.source_path,)
+                    while True:
+                        new_file_path = settings.EMPTY_TRASH_DIR / (
+                            old_filebase + (f"_{counter:02}" if counter else "") + old_fileext
+                        )
 
-        for filename in files:
-            if filename and filename.is_file():
+                        if new_file_path.exists():
+                            counter += 1
+                        else:
+                            break
+
+                    logger.debug(f"Moving {fs_path} to trash at {new_file_path}")
+                    try:
+                        shutil.move(fs_path, new_file_path)
+                    except OSError as e:
+                        logger.error(
+                            f"Failed to move {fs_path} to trash at "
+                            f"{new_file_path}: {e}. Skipping cleanup!",
+                        )
+                        return
+            except Exception as e:
+                logger.warning(f"Could not move to trash (may not be filesystem backend): {e}")
+
+        # Delete files using storage backend
+        files_to_delete = []
+        if instance.thumbnail_path:
+            files_to_delete.append(instance.thumbnail_path)
+        if instance.has_archive_version and instance.archive_path:
+            files_to_delete.append(instance.archive_path)
+        if not settings.EMPTY_TRASH_DIR and instance.source_path:
+            files_to_delete.append(instance.source_path)
+
+        for logical_path in files_to_delete:
+            if logical_path:
                 try:
-                    filename.unlink()
-                    logger.debug(f"Deleted file {filename}.")
-                except OSError as e:
+                    if backend.exists(logical_path):
+                        backend.delete(logical_path)
+                        logger.debug(f"Deleted file {logical_path}.")
+                    else:
+                        logger.warning(f"Expected {logical_path} to exist, but it did not")
+                except Exception as e:
                     logger.warning(
                         f"While deleting document {instance!s}, the file "
-                        f"{filename} could not be deleted: {e}",
+                        f"{logical_path} could not be deleted: {e}",
                     )
-            elif filename and not filename.is_file():
-                logger.warning(f"Expected {filename} to exist, but it did not")
 
-        delete_empty_directories(
-            Path(instance.source_path).parent,
-            root=settings.ORIGINALS_DIR,
-        )
+        # Delete empty directories (only for filesystem backend)
+        if isinstance(instance.source_path, str):
+            try:
+                fs_path = backend.get_path(instance.source_path)
+                if isinstance(fs_path, str):
+                    delete_empty_directories(
+                        Path(fs_path).parent,
+                        root=settings.ORIGINALS_DIR,
+                    )
+            except Exception:
+                pass  # May not be filesystem backend
 
-        if instance.has_archive_version:
-            delete_empty_directories(
-                Path(instance.archive_path).parent,
-                root=settings.ARCHIVE_DIR,
-            )
+        if instance.has_archive_version and isinstance(instance.archive_path, str):
+            try:
+                fs_path = backend.get_path(instance.archive_path)
+                if isinstance(fs_path, str):
+                    delete_empty_directories(
+                        Path(fs_path).parent,
+                        root=settings.ARCHIVE_DIR,
+                    )
+            except Exception:
+                pass  # May not be filesystem backend
 
 
 class CannotMoveFilesException(Exception):

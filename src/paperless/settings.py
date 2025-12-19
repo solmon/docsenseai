@@ -303,6 +303,60 @@ SCRATCH_DIR = __get_path(
 )
 
 ###############################################################################
+# Storage Backend Configuration                                               #
+###############################################################################
+
+# Storage backend type: 'filesystem' or 'azure_blob'
+PAPERLESS_STORAGE_BACKEND = os.getenv("PAPERLESS_STORAGE_BACKEND", "filesystem")
+
+# Azure Blob Storage configuration (required if backend is 'azure_blob')
+PAPERLESS_AZURE_CONNECTION_STRING = os.getenv("PAPERLESS_AZURE_CONNECTION_STRING", "")
+PAPERLESS_AZURE_CONTAINER_NAME = os.getenv("PAPERLESS_AZURE_CONTAINER_NAME", "")
+
+
+def _validate_storage_backend_config() -> None:
+    """
+    Validate storage backend configuration at startup.
+
+    Raises:
+        ValueError: If configuration is invalid or incomplete
+    """
+    valid_backends = {"filesystem", "azure_blob"}
+    backend = PAPERLESS_STORAGE_BACKEND
+
+    if backend not in valid_backends:
+        raise ValueError(
+            f"Invalid storage backend '{backend}'. "
+            f"Must be one of: {', '.join(valid_backends)}",
+        )
+
+    if backend == "azure_blob":
+        if not PAPERLESS_AZURE_CONNECTION_STRING:
+            raise ValueError(
+                "Azure Blob Storage backend requires "
+                "PAPERLESS_AZURE_CONNECTION_STRING environment variable",
+            )
+        if not PAPERLESS_AZURE_CONTAINER_NAME:
+            raise ValueError(
+                "Azure Blob Storage backend requires "
+                "PAPERLESS_AZURE_CONTAINER_NAME environment variable",
+            )
+        # Basic connection string format validation
+        if "AccountName=" not in PAPERLESS_AZURE_CONNECTION_STRING:
+            raise ValueError(
+                "Invalid Azure connection string format. "
+                "Expected format: DefaultEndpointsProtocol=https;AccountName=...;...",
+            )
+
+
+# Validate storage backend configuration at startup
+try:
+    _validate_storage_backend_config()
+except ValueError as e:
+    logger.error(f"Storage backend configuration error: {e}")
+    raise
+
+###############################################################################
 # Application Definition                                                      #
 ###############################################################################
 

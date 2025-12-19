@@ -30,4 +30,17 @@ class DocumentsConfig(AppConfig):
 
         import documents.schema  # noqa: F401
 
+        # Initialize storage backend
+        try:
+            from documents.storage.factory import get_storage_backend
+
+            backend = get_storage_backend()
+            backend.initialize()
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to initialize storage backend: {e}")
+            raise
+
         AppConfig.ready(self)

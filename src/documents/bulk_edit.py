@@ -38,6 +38,47 @@ if TYPE_CHECKING:
 logger: logging.Logger = logging.getLogger("paperless.bulk_edit")
 
 
+def _get_file_path_for_operation(logical_path: str) -> Path:
+    """
+    Get a temporary file path for operations that need file paths.
+
+    Retrieves file from storage backend and creates a temporary file.
+    Caller is responsible for cleanup.
+
+    Args:
+        logical_path: Logical path to retrieve
+
+    Returns:
+        Path to temporary file
+    """
+    from documents.storage.factory import get_storage_backend
+
+    backend = get_storage_backend()
+    file_obj = backend.retrieve(logical_path)
+
+    # Create temporary file
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    tmp_file.write(file_obj.read())
+    tmp_file.close()
+
+    return Path(tmp_file.name)
+
+
+def _save_file_from_path(logical_path: str, file_path: Path) -> None:
+    """
+    Save a file from a file path to storage backend.
+
+    Args:
+        logical_path: Logical path where to store
+        file_path: Path to file to save
+    """
+    from documents.storage.factory import get_storage_backend
+
+    backend = get_storage_backend()
+    with file_path.open("rb") as f:
+        backend.store(logical_path, f)
+
+
 def set_correspondent(
     doc_ids: list[int],
     correspondent: Correspondent,
@@ -344,12 +385,23 @@ def rotate(doc_ids: list[int], degrees: int) -> Literal["OK"]:
             )
             continue
         try:
-            with pikepdf.open(doc.source_path, allow_overwriting_input=True) as pdf:
-                for page in pdf.pages:
-                    page.rotate(degrees, relative=True)
-                pdf.save()
-                doc.checksum = hashlib.md5(doc.source_path.read_bytes()).hexdigest()
+            # Get temporary file for pikepdf operations
+            tmp_path = _get_file_path_for_operation(doc.source_path)
+            try:
+                with pikepdf.open(tmp_path, allow_overwriting_input=True) as pdf:
+                    for page in pdf.pages:
+                        page.rotate(degrees, relative=True)
+                    pdf.save()
+                # Save back to storage backend
+                _save_file_from_path(doc.source_path, tmp_path)
+                # Calculate checksum
+                with tmp_path.open("rb") as f:
+                    doc.checksum = hashlib.md5(f.read()).hexdigest()
                 doc.save()
+            finally:
+                # Clean up temporary file
+                if tmp_path.exists():
+                    tmp_path.unlink()
                 rotate_tasks.append(
                     update_document_content_maybe_archive_file.s(
                         document_id=doc.id,
@@ -397,10 +449,17 @@ def merge(
                 and doc.has_archive_version
                 else doc.source_path
             )
-            with pikepdf.open(str(doc_path)) as pdf:
-                version = max(version, pdf.pdf_version)
-                merged_pdf.pages.extend(pdf.pages)
-            affected_docs.append(doc.id)
+            # Get temporary file for pikepdf operations
+            tmp_path = _get_file_path_for_operation(doc_path)
+            try:
+                with pikepdf.open(str(tmp_path)) as pdf:
+                    version = max(version, pdf.pdf_version)
+                    merged_pdf.pages.extend(pdf.pages)
+                affected_docs.append(doc.id)
+            finally:
+                # Clean up temporary file
+                if tmp_path.exists():
+                    tmp_path.unlink()
         except Exception as e:
             logger.exception(
                 f"Error merging document {doc.id}, it will not be included in the merge: {e}",
@@ -471,39 +530,42 @@ def split(
     consume_tasks = []
 
     try:
-        with pikepdf.open(doc.source_path) as pdf:
-            for idx, split_doc in enumerate(pages):
-                dst: pikepdf.Pdf = pikepdf.new()
-                for page in split_doc:
-                    dst.pages.append(pdf.pages[page - 1])
-                filepath: Path = (
-                    Path(
-                        tempfile.mkdtemp(dir=settings.SCRATCH_DIR),
+        # Get temporary file for pikepdf operations
+        tmp_path = _get_file_path_for_operation(doc.source_path)
+        try:
+            with pikepdf.open(tmp_path) as pdf:
+                for idx, split_doc in enumerate(pages):
+                    dst: pikepdf.Pdf = pikepdf.new()
+                    for page in split_doc:
+                        dst.pages.append(pdf.pages[page - 1])
+                    filepath: Path = (
+                        Path(
+                            tempfile.mkdtemp(dir=settings.SCRATCH_DIR),
+                        )
+                        / f"{doc.id}_{split_doc[0]}-{split_doc[-1]}.pdf"
                     )
-                    / f"{doc.id}_{split_doc[0]}-{split_doc[-1]}.pdf"
-                )
-                dst.remove_unreferenced_resources()
-                dst.save(filepath)
-                dst.close()
+                    dst.remove_unreferenced_resources()
+                    dst.save(filepath)
+                    dst.close()
 
-                overrides: DocumentMetadataOverrides = (
-                    DocumentMetadataOverrides().from_document(doc)
-                )
-                overrides.title = f"{doc.title} (split {idx + 1})"
-                if user is not None:
-                    overrides.owner_id = user.id
-                logger.info(
-                    f"Adding split document with pages {split_doc} to the task queue.",
-                )
-                consume_tasks.append(
-                    consume_file.s(
-                        ConsumableDocument(
-                            source=DocumentSource.ConsumeFolder,
-                            original_file=filepath,
+                    overrides: DocumentMetadataOverrides = (
+                        DocumentMetadataOverrides().from_document(doc)
+                    )
+                    overrides.title = f"{doc.title} (split {idx + 1})"
+                    if user is not None:
+                        overrides.owner_id = user.id
+                    logger.info(
+                        f"Adding split document with pages {split_doc} to the task queue.",
+                    )
+                    consume_tasks.append(
+                        consume_file.s(
+                            ConsumableDocument(
+                                source=DocumentSource.ConsumeFolder,
+                                original_file=filepath,
+                            ),
+                            overrides,
                         ),
-                        overrides,
-                    ),
-                )
+                    )
 
             if delete_originals:
                 logger.info(
@@ -512,6 +574,10 @@ def split(
                 chord(header=consume_tasks, body=delete.si([doc.id])).delay()
             else:
                 group(consume_tasks).delay()
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
 
     except Exception as e:
         logger.exception(f"Error splitting document {doc.id}: {e}")
@@ -528,19 +594,30 @@ def delete_pages(doc_ids: list[int], pages: list[int]) -> Literal["OK"]:
     import pikepdf
 
     try:
-        with pikepdf.open(doc.source_path, allow_overwriting_input=True) as pdf:
-            offset = 1  # pages are 1-indexed
-            for page_num in pages:
-                pdf.pages.remove(pdf.pages[page_num - offset])
-                offset += 1  # remove() changes the index of the pages
-            pdf.remove_unreferenced_resources()
-            pdf.save()
-            doc.checksum = hashlib.md5(doc.source_path.read_bytes()).hexdigest()
+        # Get temporary file for pikepdf operations
+        tmp_path = _get_file_path_for_operation(doc.source_path)
+        try:
+            with pikepdf.open(tmp_path, allow_overwriting_input=True) as pdf:
+                offset = 1  # pages are 1-indexed
+                for page_num in pages:
+                    pdf.pages.remove(pdf.pages[page_num - offset])
+                    offset += 1  # remove() changes the index of the pages
+                pdf.remove_unreferenced_resources()
+                pdf.save()
+            # Save back to storage backend
+            _save_file_from_path(doc.source_path, tmp_path)
+            # Calculate checksum
+            with tmp_path.open("rb") as f:
+                doc.checksum = hashlib.md5(f.read()).hexdigest()
             if doc.page_count is not None:
                 doc.page_count = doc.page_count - len(pages)
             doc.save()
             update_document_content_maybe_archive_file.delay(document_id=doc.id)
             logger.info(f"Deleted pages {pages} from document {doc.id}")
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
     except Exception as e:
         logger.exception(f"Error deleting pages from document {doc.id}: {e}")
 
@@ -573,67 +650,79 @@ def edit_pdf(
     pdf_docs: list[pikepdf.Pdf] = []
 
     try:
-        with pikepdf.open(doc.source_path) as src:
-            # prepare output documents
-            max_idx = max(op.get("doc", 0) for op in operations)
-            pdf_docs = [pikepdf.new() for _ in range(max_idx + 1)]
+        # Get temporary file for pikepdf operations
+        tmp_path = _get_file_path_for_operation(doc.source_path)
+        try:
+            with pikepdf.open(tmp_path) as src:
+                # prepare output documents
+                max_idx = max(op.get("doc", 0) for op in operations)
+                pdf_docs = [pikepdf.new() for _ in range(max_idx + 1)]
 
-            if update_document and len(pdf_docs) > 1:
-                logger.error(
-                    "Update requested but multiple output documents specified",
-                )
-                raise ValueError("Multiple output documents specified")
+                if update_document and len(pdf_docs) > 1:
+                    logger.error(
+                        "Update requested but multiple output documents specified",
+                    )
+                    raise ValueError("Multiple output documents specified")
 
-            for op in operations:
-                dst = pdf_docs[op.get("doc", 0)]
-                page = src.pages[op["page"] - 1]
-                dst.pages.append(page)
-                if op.get("rotate"):
-                    dst.pages[-1].rotate(op["rotate"], relative=True)
+                for op in operations:
+                    dst = pdf_docs[op.get("doc", 0)]
+                    page = src.pages[op["page"] - 1]
+                    dst.pages.append(page)
+                    if op.get("rotate"):
+                        dst.pages[-1].rotate(op["rotate"], relative=True)
 
-        if update_document:
-            temp_path = doc.source_path.with_suffix(".tmp.pdf")
-            pdf = pdf_docs[0]
-            pdf.remove_unreferenced_resources()
-            # save the edited PDF to a temporary file in case of errors
-            pdf.save(temp_path)
-            # replace the original document with the edited one
-            temp_path.replace(doc.source_path)
-            doc.checksum = hashlib.md5(doc.source_path.read_bytes()).hexdigest()
-            doc.page_count = len(pdf.pages)
-            doc.save()
-            update_document_content_maybe_archive_file.delay(document_id=doc.id)
-        else:
-            consume_tasks = []
-            overrides = (
-                DocumentMetadataOverrides().from_document(doc)
-                if include_metadata
-                else DocumentMetadataOverrides()
-            )
-            if user is not None:
-                overrides.owner_id = user.id
-
-            for idx, pdf in enumerate(pdf_docs, start=1):
-                filepath: Path = (
-                    Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR))
-                    / f"{doc.id}_edit_{idx}.pdf"
-                )
+            if update_document:
+                pdf = pdf_docs[0]
                 pdf.remove_unreferenced_resources()
-                pdf.save(filepath)
-                consume_tasks.append(
-                    consume_file.s(
-                        ConsumableDocument(
-                            source=DocumentSource.ConsumeFolder,
-                            original_file=filepath,
-                        ),
-                        overrides,
-                    ),
-                )
-
-            if delete_original:
-                chord(header=consume_tasks, body=delete.si([doc.id])).delay()
+                # save the edited PDF to a temporary file
+                temp_path = Path(tempfile.mkstemp(suffix=".pdf", dir=settings.SCRATCH_DIR)[1])
+                pdf.save(temp_path)
+                # Save back to storage backend
+                _save_file_from_path(doc.source_path, temp_path)
+                # Calculate checksum
+                with temp_path.open("rb") as f:
+                    doc.checksum = hashlib.md5(f.read()).hexdigest()
+                doc.page_count = len(pdf.pages)
+                doc.save()
+                update_document_content_maybe_archive_file.delay(document_id=doc.id)
+                # Clean up temporary file
+                if temp_path.exists():
+                    temp_path.unlink()
             else:
-                group(consume_tasks).delay()
+                consume_tasks = []
+                overrides = (
+                    DocumentMetadataOverrides().from_document(doc)
+                    if include_metadata
+                    else DocumentMetadataOverrides()
+                )
+                if user is not None:
+                    overrides.owner_id = user.id
+
+                for idx, pdf in enumerate(pdf_docs, start=1):
+                    filepath: Path = (
+                        Path(tempfile.mkdtemp(dir=settings.SCRATCH_DIR))
+                        / f"{doc.id}_edit_{idx}.pdf"
+                    )
+                    pdf.remove_unreferenced_resources()
+                    pdf.save(filepath)
+                    consume_tasks.append(
+                        consume_file.s(
+                            ConsumableDocument(
+                                source=DocumentSource.ConsumeFolder,
+                                original_file=filepath,
+                            ),
+                            overrides,
+                        ),
+                    )
+
+                if delete_original:
+                    chord(header=consume_tasks, body=delete.si([doc.id])).delay()
+                else:
+                    group(consume_tasks).delay()
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
 
     except Exception as e:
         logger.exception(f"Error editing document {doc.id}: {e}")
