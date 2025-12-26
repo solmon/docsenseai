@@ -38,9 +38,25 @@ class AzureBlobStorageBackend(StorageBackend):
             self.container_client = self.blob_service_client.get_container_client(
                 self.container_name,
             )
+            # Ensure container exists on initialization
+            self._ensure_container_exists()
         except Exception as e:
             logger.error(f"[azure_blob] Failed to create Azure clients: {e}")
             raise ConnectionError(f"Azure connection failed: {e}") from e
+
+    def _ensure_container_exists(self) -> None:
+        """Ensure the Azure container exists, creating it if necessary."""
+        try:
+            if not self.container_client.exists():
+                self.container_client.create_container()
+                logger.info(f"[azure_blob] Created container: {self.container_name}")
+            else:
+                logger.debug(
+                    f"[azure_blob] Container already exists: {self.container_name}",
+                )
+        except AzureError as e:
+            logger.error(f"[azure_blob] Failed to ensure container exists: {e}")
+            raise ConnectionError(f"Azure container creation failed: {e}") from e
 
     def store(self, path: str, file_obj: BinaryIO) -> None:
         """
@@ -174,14 +190,7 @@ class AzureBlobStorageBackend(StorageBackend):
             ConnectionError: If connection to Azure fails
         """
         try:
-            # Check if container exists, create if not
-            if not self.container_client.exists():
-                self.container_client.create_container()
-                logger.info(f"[azure_blob] Created container: {self.container_name}")
-            else:
-                logger.info(
-                    f"[azure_blob] Container already exists: {self.container_name}"
-                )
+            self._ensure_container_exists()
             logger.info("[azure_blob] Storage backend initialized")
         except AzureError as e:
             logger.error(f"[azure_blob] Failed to initialize storage backend: {e}")
